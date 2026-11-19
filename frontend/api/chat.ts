@@ -142,6 +142,7 @@ export const streamChat = (
 		question: payload.question,
 		conversation_id: payload.conversationId ?? undefined,
 		target_db: payload.target_db ?? undefined,
+		reasoning_model: payload.reasoning_model ?? undefined,
 	});
 
 	(async () => {

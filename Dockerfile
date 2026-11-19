@@ -64,8 +64,16 @@ COPY pyproject.toml uv.lock .python-version ./
 COPY vendor/ vendor/
 
 # Resolve and install the dependency closure into /opt/venv.
+# `apache-ossie-nvidia-auto-ontology` is declared as a git dependency; on this
+# host github.com:443 is unreachable, so git is routed through a mirror.
+# Pass --build-arg GIT_MIRROR= (empty) to restore the upstream behaviour.
+ARG GIT_MIRROR=https://gh-proxy.com/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev --no-install-project
+    if [ -n "${GIT_MIRROR}" ]; then \
+        git config --system \
+            url."${GIT_MIRROR}https://github.com/".insteadOf "https://github.com/"; \
+    fi \
+    && uv sync --no-dev --no-install-project
 
 ############################
 # Stage 2: runtime

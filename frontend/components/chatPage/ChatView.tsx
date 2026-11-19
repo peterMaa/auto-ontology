@@ -18,7 +18,7 @@ import {
 import { semanticCompilationApi } from '@/api/settings';
 import { ChatSidebar } from './ChatSidebar';
 import { MessageList } from './MessageList';
-import { ChatInput } from './ChatInput';
+import { ChatInput, type ReasoningModelOption } from './ChatInput';
 import { SemanticNotReady } from './SemanticNotReady';
 
 export const ChatView = () => {
@@ -35,6 +35,13 @@ export const ChatView = () => {
 	const [messageListLoading, setMessageListLoading] = useState<boolean>(focusId != null);
 	// null = still checking; false = semantic layer missing (block the chat area).
 	const [semanticReady, setSemanticReady] = useState<boolean | null>(null);
+	// Reasoning-model picker. Populated from the backend so a profile that is
+	// not configured server-side never appears as a choice; the selection only
+	// affects question understanding/SQL generation for this browser.
+	const [reasoningModels, setReasoningModels] = useState<ReasoningModelOption[]>(
+		[],
+	);
+	const [reasoningModel, setReasoningModel] = useState<string>('');
 	const loadedFocusRef = useRef<string | null>(null);
 
 	const {
@@ -48,6 +55,56 @@ export const ChatView = () => {
 		stopGeneration,
 		clearConversation,
 	} = useChat();
+
+	// Load the selectable reasoning profiles once. A failed fetch just leaves
+	// the picker hidden, in which case the backend default answers.
+	useEffect(() => {
+		let cancelled = false;
+		void (async () => {
+			try {
+				const res = await fetch('/api/chat/reasoning-models');
+				if (!res.ok) return;
+				const data = (await res.json()) as {
+					models?: {
+						id: string;
+						label: string;
+						default?: boolean;
+						available?: boolean;
+					}[];
+				};
+				const models = data.models ?? [];
+				if (cancelled || models.length === 0) return;
+				setReasoningModels(
+					models.map(({ id, label, available }) => ({ id, label, available })),
+				);
+				let stored: string | null = null;
+				try {
+					stored = window.localStorage.getItem('autoOntology.reasoningModel');
+				} catch {
+					/* storage unavailable — fall through to the default */
+				}
+				const preferred =
+					models.find((m) => m.id === stored) ??
+					models.find((m) => m.default) ??
+					models[0];
+				setReasoningModel(preferred.id);
+			} catch {
+				/* keep the picker hidden */
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const handleSelectReasoningModel = useCallback((id: string) => {
+		setReasoningModel(id);
+		try {
+			window.localStorage.setItem('autoOntology.reasoningModel', id);
+		} catch {
+			/* storage unavailable — the choice lasts for this page only */
+		}
+	}, []);
 
 	const updateFocusInUrl = useCallback(
 		(id: string | null) => {
@@ -206,9 +263,15 @@ export const ChatView = () => {
 					return false;
 				}
 			}
-			return sendMessage(text, convId);
+			return sendMessage(text, convId, reasoningModel || null);
 		},
-		[activeConvId, sendMessage, refreshConversations, updateFocusInUrl],
+		[
+			activeConvId,
+			sendMessage,
+			refreshConversations,
+			updateFocusInUrl,
+			reasoningModel,
+		],
 	);
 
 	return (
@@ -246,6 +309,9 @@ export const ChatView = () => {
 							onSend={handleSend}
 							onStop={stopGeneration}
 							isLoading={isLoading}
+							reasoningModels={reasoningModels}
+							selectedReasoningModel={reasoningModel}
+							onSelectReasoningModel={handleSelectReasoningModel}
 						/>
 					</>
 				)}

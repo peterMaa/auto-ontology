@@ -156,14 +156,8 @@ def build_pql_prompt(
     prev_pql: str | None = None,
     prev_error: str | None = None,
     dialect: str | None = None,
-    organization: str = "",
 ) -> str:
-    """Assemble the text-to-PQL prompt (pure Python; mirrors the old Jinja template).
-
-    *organization* is the deployment's instructions and glossary, already
-    rendered; without it a question that uses an internal term reaches the
-    PQL model with that term undefined.
-    """
+    """Assemble the text-to-PQL prompt (pure Python; mirrors the old Jinja template)."""
     docs = docs or []
     examples = examples or []
     sections: list[str] = [_PQL_HEADER]
@@ -180,9 +174,6 @@ def build_pql_prompt(
 
     if docs:
         sections.append("## Domain rules\n" + "\n".join(f"- {d}" for d in docs))
-
-    if organization.strip():
-        sections.append("## Organization context\n" + organization.strip())
 
     if examples:
         blocks = []

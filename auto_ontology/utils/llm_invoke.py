@@ -224,9 +224,43 @@ def _build_client(
     OpenAI-family models (``openai/``, ``azure/``, ``aws/`` prefixes) go through
     ``ChatOpenAI``, which supports structured output. Everything else uses
     ``ChatNVIDIA``.
+
+    ``AUTO_ONTOLOGY_OPENAI_COMPAT_CLIENT=1`` forces ``ChatOpenAI`` for every
+    model id. Needed when the endpoint is OpenAI-compatible but rejects the
+    LangChain-internal fields ``ChatNVIDIA`` puts on the wire while binding a
+    structured-output schema (``ls_structured_output_format`` -> HTTP 400
+    "Unsupported parameter(s)"), which silently degrades every structured call
+    to the removed ``guided_json`` fallback.
     """
-    if model.startswith(("openai/", "azure/", "aws/")):
+    force_openai = os.environ.get("AUTO_ONTOLOGY_OPENAI_COMPAT_CLIENT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if force_openai or model.startswith(("openai/", "azure/", "aws/")):
         from langchain_openai import ChatOpenAI
+
+        # Reasoning models on the hosted NIM spend the whole completion budget on
+        # hidden thinking tokens, so the call dies with LengthFinishReasonError
+        # (completion_tokens == max_tokens, content empty). Cap the thinking
+        # budget instead of disabling it outright, so the model still reasons.
+        #
+        # The cap is a NIM field inside `nvext`; other OpenAI-compatible
+        # endpoints reject unknown parameters, so it is only sent to NVIDIA.
+        # DeepSeek gets its own switch: thinking mode rejects a forced
+        # `tool_choice`, which the function-calling structured-output path sets.
+        extra: dict = {}
+        base_url_l = base_url.lower()
+        if "nvidia" in base_url_l:
+            thinking_cap = os.environ.get(
+                "AUTO_ONTOLOGY_MAX_THINKING_TOKENS", ""
+            ).strip()
+            if thinking_cap.isdigit():
+                extra["extra_body"] = {
+                    "nvext": {"max_thinking_tokens": int(thinking_cap)}
+                }
+        elif "deepseek" in base_url_l:
+            extra["extra_body"] = {"thinking": {"type": "disabled"}}
 
         return ChatOpenAI(
             model=model,
@@ -239,6 +273,7 @@ def _build_client(
             max_tokens=max_tokens,
             timeout=LLM_INVOKE_TIMEOUT_S,
             max_retries=0,
+            **extra,
         )
 
     from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -266,14 +301,33 @@ def get_llm_client(
     ----------
     model : str | None
         Override the default ``REASONING_MODEL`` env var for this client.
+
+    When a per-question profile is active (see
+    :mod:`auto_ontology.utils.model_profiles`), its endpoint/key/model replace
+    the env defaults; the embedding and reranking roles are unaffected.
     """
-    if not _API_KEY:
+    from auto_ontology.utils.model_profiles import (
+        DEFAULT_PROFILE_ID,
+        get_active_profile,
+        resolve_profile,
+    )
+
+    profile = None
+    active = get_active_profile()
+    if active and active != DEFAULT_PROFILE_ID:
+        profile = resolve_profile(active)
+
+    api_key = profile.api_key if profile else _API_KEY
+    base_url = profile.endpoint if profile else _BASE_URL
+    model_name = model or (profile.model if profile else _MODEL_NAME)
+
+    if not api_key:
         raise EnvironmentError("REASONING_API_KEY is not set")
 
     return _build_client(
-        model=model or _MODEL_NAME,
-        api_key=_API_KEY,
-        base_url=_BASE_URL,
+        model=model_name,
+        api_key=api_key,
+        base_url=base_url,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -317,7 +371,7 @@ def get_non_reasoning_llm_client(
 # returns a wrapper whose ``bound`` is the client registered here.
 _NON_REASONING_IDS: set[int] = set()
 _NON_REASONING_STRONG_REFS: dict[int, object] = {}
-_REASONING_FALLBACK_CLIENT: BaseChatModel | None = None
+_REASONING_FALLBACK_CLIENTS: dict[str, BaseChatModel] = {}
 _REASONING_FALLBACK_LOCK = threading.Lock()
 
 # How many ``bound`` links to follow. Real ``.bind()`` chains are a level or two
@@ -354,13 +408,22 @@ def _is_non_reasoning_client(llm: object) -> bool:
 
 
 def _get_reasoning_fallback_client() -> BaseChatModel:
-    """Build the default reasoning fallback once and reuse its connection pool."""
-    global _REASONING_FALLBACK_CLIENT
-    if _REASONING_FALLBACK_CLIENT is None:
+    """Build one reasoning fallback per active profile and reuse its pool.
+
+    Keyed by profile because the chat endpoint lets the caller pick a reasoning
+    model per question: a single cached client would keep answering on the
+    profile that happened to be active the first time this ran.
+    """
+    from auto_ontology.utils.model_profiles import get_active_profile
+
+    profile_id = get_active_profile()
+    client = _REASONING_FALLBACK_CLIENTS.get(profile_id)
+    if client is None:
         with _REASONING_FALLBACK_LOCK:
-            if _REASONING_FALLBACK_CLIENT is None:
-                _REASONING_FALLBACK_CLIENT = get_llm_client()
-    return _REASONING_FALLBACK_CLIENT
+            client = _REASONING_FALLBACK_CLIENTS.get(profile_id)
+            if client is None:
+                client = _REASONING_FALLBACK_CLIENTS[profile_id] = get_llm_client()
+    return client
 
 
 def _reasoning_fallback_client(llm: object) -> BaseChatModel | None:
@@ -428,8 +491,8 @@ def _system_messages_first(
     """Move every system message ahead of the conversation for Claude models.
 
     Claude takes a single system prompt ahead of the conversation, but agents
-    can interleave them, e.g. system, user, system, system, user, or a retry
-    that appends a system message after the user turn.
+    interleave them: ``sql_from_semantic`` sends system, user, system, system,
+    user, and a validation retry appends a system message after the user turn.
     On the inference-api gateway, ``azure/anthropic/*`` rejects every request
     with a system message after a user message, because the gateway attaches
     prompt-cache markers in an order Anthropic refuses::
@@ -474,6 +537,17 @@ def _structured_output_kwargs(llm: BaseChatModel) -> dict:
     """
     if _is_claude(llm):
         return {"method": "function_calling", "tool_choice": None}
+
+    # DeepSeek's OpenAI-compatible surface only accepts
+    # ``response_format: {"type": "json_object"}`` — no ``json_schema`` — so
+    # langchain's default json_schema path is rejected with HTTP 400. It does
+    # support tool calling, which is what ``function_calling`` binds. Thinking
+    # mode is disabled when the client is built, because it refuses a forced
+    # ``tool_choice``.
+    base_url = str(getattr(llm, "openai_api_base", "") or "").lower()
+    if "deepseek" in base_url:
+        return {"method": "function_calling"}
+
     return {}
 
 
@@ -539,42 +613,6 @@ def _safe_invoke_text(llm: BaseChatModel, prompt: str) -> str:
                 continue
             raise
     raise RuntimeError("safe_invoke_text exhausted retries")
-
-
-def invoke_with_retry(
-    llm: BaseChatModel,
-    messages: list[BaseMessage],
-    *,
-    max_attempts: int = RETRY_MAX_ATTEMPTS,
-    base_wait: float = 2.0,
-    max_wait: float = 60.0,
-):
-    """``llm.invoke(messages)``, retried with exponential backoff on transient errors.
-
-    For a caller whose call sits in the middle of a longer conversation, where
-    giving up means losing everything said so far. The waits double from
-    *base_wait* up to *max_wait*, which is how long a saturated or
-    rate-limited endpoint needs; the shorter waits of the other helpers here
-    do not outlast it. An error that is not transient is raised at once, and
-    so is the last one once the attempts run out.
-    """
-    for attempt in range(max(max_attempts, 1)):
-        try:
-            with _inflight_guard():
-                return llm.invoke(messages)
-        except Exception as e:
-            if not _is_retryable(e) or attempt >= max_attempts - 1:
-                raise
-            wait = min(max_wait, base_wait * 2**attempt) + random.uniform(0, 1)
-            logger.warning(
-                "Retryable LLM error on attempt %d/%d — retrying in %.1fs: %s",
-                attempt + 1,
-                max_attempts,
-                wait,
-                str(e)[:120],
-            )
-            time.sleep(wait)
-    raise RuntimeError("invoke_with_retry exhausted its attempts")
 
 
 def safe_invoke_text(llm: BaseChatModel, prompt: str) -> str:

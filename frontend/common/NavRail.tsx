@@ -8,29 +8,32 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon, IconName } from '@/common/icons';
+import { useI18n } from '@/lib/i18n/I18nProvider';
 
 type NavItem = {
 	icon: IconName;
 	href: string;
-	label: string;
+	/** i18n key under `nav.*`; resolved in the component so the locale is live. */
+	labelKey: string;
 	adminOnly?: boolean;
 };
 
 const navItems: NavItem[] = [
-	{ icon: IconName.ChatBubble, href: '/chat', label: 'Chat' },
-	{ icon: IconName.Discovery, href: '/discovery', label: 'Discovery' },
-	{ icon: IconName.Terms, href: '/terms', label: 'Terms' },
-	{ icon: IconName.ChartBar, href: '/analysis', label: 'Analysis' },
-	{ icon: IconName.Exploration, href: '/exploration', label: 'Exploration' },
-	{ icon: IconName.Database, href: '/data', label: 'Data' },
-	{ icon: IconName.ChartLine, href: '/analytics', label: 'Analytics', adminOnly: true },
+	{ icon: IconName.ChatBubble, href: '/chat', labelKey: 'nav.chat' },
+	{ icon: IconName.Discovery, href: '/discovery', labelKey: 'nav.discovery' },
+	{ icon: IconName.Terms, href: '/terms', labelKey: 'nav.terms' },
+	{ icon: IconName.ChartBar, href: '/analysis', labelKey: 'nav.analysis' },
+	{ icon: IconName.Exploration, href: '/exploration', labelKey: 'nav.exploration' },
+	{ icon: IconName.Database, href: '/data', labelKey: 'nav.data' },
+	{ icon: IconName.ChartLine, href: '/analytics', labelKey: 'nav.analytics', adminOnly: true },
 	// Settings is admin-only and now also contains Users and Single Sign-On
 	// (see app/settings/*). Viewers don't see it.
-	{ icon: IconName.Settings, href: '/settings', label: 'Settings', adminOnly: true },
+	{ icon: IconName.Settings, href: '/settings', labelKey: 'nav.settings', adminOnly: true },
 ];
 
 export const NavRail = ({ isAdmin = false }: { isAdmin?: boolean }) => {
 	const pathname = usePathname();
+	const { t } = useI18n();
 	const [isExpanded, setIsExpanded] = useState(false);
 	const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
@@ -55,7 +58,7 @@ export const NavRail = ({ isAdmin = false }: { isAdmin?: boolean }) => {
 							<Link
 								key={item.href}
 								href={item.href}
-								title={isExpanded ? undefined : item.label}
+								title={isExpanded ? undefined : t(item.labelKey)}
 								className={`flex h-9 shrink-0 items-center gap-3 rounded-lg transition-colors ${
 									isExpanded ? 'w-full px-2' : 'w-9 justify-center'
 								} ${
@@ -67,7 +70,7 @@ export const NavRail = ({ isAdmin = false }: { isAdmin?: boolean }) => {
 								<Icon name={item.icon} className="h-5 w-5 shrink-0" />
 								{isExpanded && (
 									<span className="truncate text-sm font-medium whitespace-nowrap">
-										{item.label}
+										{t(item.labelKey)}
 									</span>
 								)}
 							</Link>

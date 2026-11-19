@@ -2,7 +2,7 @@
 # All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Chat streaming endpoint — wraps the text-to-SQL pipeline.
+"""Chat streaming endpoint — wraps the LangGraph text-to-SQL pipeline.
 
 Each chat request runs in a prewarmed agent subprocess from
 ``WarmPool``. See ``worker.py`` for why subprocess isolation is
@@ -109,6 +109,57 @@ from auto_ontology.server.responses import ChatCancelResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/chat/reasoning-models")
+def list_reasoning_models() -> dict[str, list[dict[str, str | bool]]]:
+    """Reasoning profiles the chat UI may offer, deployment default first.
+
+    An unconfigured alternative is still listed with ``available: false`` so the
+    UI can show it greyed out instead of pretending it does not exist — ranking
+    it would quietly answer with a different model than the user picked.
+    Embedding and reranking are not selectable: they stay on their configured
+    endpoints for every question.
+    """
+    from auto_ontology.utils.model_profiles import (
+        DEFAULT_PROFILE_ID,
+        alternative_profile,
+        default_profile,
+    )
+
+    models: list[dict[str, str | bool]] = []
+    primary = default_profile()
+    models.append(
+        {
+            "id": primary.id,
+            "label": primary.label,
+            "model": primary.model,
+            "default": True,
+            "available": True,
+        }
+    )
+    alt = alternative_profile()
+    if alt is not None:
+        models.append(
+            {
+                "id": alt.id,
+                "label": alt.label,
+                "model": alt.model,
+                "default": False,
+                "available": True,
+            }
+        )
+    else:
+        models.append(
+            {
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "model": "",
+                "default": False,
+                "available": False,
+            }
+        )
+    return {"models": models}
 
 
 class EventStreamResponse(StreamingResponse):
@@ -540,14 +591,11 @@ def _stream_slot(slot: _Slot) -> Generator[str, None, None]:
 async def chat_completions(
     request: ChatRequest, http_request: Request
 ) -> StreamingResponse:
-    """Run the agent on one chat message and stream OpenAI-style SSE frames back.
+    """Run the text-to-SQL agent and stream OpenAI-style SSE frames back.
 
-    The agent answers data questions with SQL, and answers greetings and
-    questions about the catalog's tables, attributes and terms from the catalog
-    without SQL. Emits a ``sql`` event once the agent has a validated query,
-    just before it executes, so callers can show the SQL while it runs. Emits
-    the final answer (with its SQL, when there is one) as a ``result`` event,
-    then — if that
+    Emits a ``sql`` event once the agent has a validated query, just before it
+    executes, so callers can show the SQL while it runs. Emits the final SQL
+    and formatted answer as a ``result`` event, then — if that
     answer has an executed result — generates and persists the chart/table
     bubble itself and streams it back as a ``charts`` event before the stream
     closes with ``[DONE]``. Callers that only care about the text/SQL answer
@@ -570,6 +618,21 @@ async def chat_completions(
         raise HTTPException(status_code=409, detail=_SEMANTIC_MISSING_MSG)
 
     target_db = await asyncio.to_thread(_resolve_chat_target_db, request.target_db)
+
+    # Reasoning-model selection is per question. Reject an unknown/unconfigured
+    # id instead of silently answering with a different model than the caller
+    # picked in the UI.
+    if request.reasoning_model:
+        from auto_ontology.utils.model_profiles import resolve_profile
+
+        if resolve_profile(request.reasoning_model) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown or unconfigured reasoning model: "
+                    f"{request.reasoning_model!r}"
+                ),
+            )
 
     # Conversation persistence trusts identity forwarded by the private Next.js
     # gateway; only calls that persist (i.e. carry a conversation_id) need it.
@@ -662,6 +725,7 @@ async def chat_completions(
         subject_token=subject_token,
         conversation_history=conversation_history,
         evidence=request.evidence,
+        reasoning_model=request.reasoning_model,
     )
     threading.Thread(target=_pump, args=(slot,), daemon=True).start()
     asyncio.create_task(_watch_disconnect(http_request, slot))

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 # Re-exported so the router (and any other server-side consumer) can keep
 # importing NODE_LABELS from here. The dict itself now lives next to the
-# pipeline definition (``auto_ontology.retrieval.text_to_sql.node_labels``) so the agent
+# graph definition (``auto_ontology.retrieval.text_to_sql.node_labels``) so the agent
 # pipeline can also use it — e.g. when building the final run's ``thoughts``
 # summary in ``stream_agent_response`` — without the retrieval layer having
 # to depend on the server layer.
@@ -61,6 +61,17 @@ class ChatRequest(BaseModel):
         default=None,
         description=(
             "Catalog database UUID or database name used to scope retrieval and SQL."
+        ),
+    )
+    # Reasoning-model profile for this question only. Omitted -> the deployment
+    # default (the REASONING_* triplet). Usable values are reported by
+    # GET /api/chat/reasoning-models; embedding and reranking never switch.
+    reasoning_model: str | None = Field(
+        default=None,
+        description=(
+            "Reasoning-model profile id for this question (e.g. 'nim', 'deepseek'). "
+            "Omitted means the deployment default. Embedding and reranking are "
+            "always served by their configured endpoints."
         ),
     )
 

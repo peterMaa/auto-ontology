@@ -22,37 +22,51 @@ llm_invoke._MODEL_NAME = "openai/test-model"
 from auto_ontology.retrieval.text_to_sql import main  # noqa: E402
 
 
-def _fail_after_generation(_state: Any, _steps: Any) -> Iterator[tuple[str, str, Any]]:
-    """Pipeline double that fails after the agent has produced SQL."""
-    yield ("start", "react_sql_agent", None)
-    yield (
-        "end",
-        "react_sql_agent",
-        {
-            "path_state": {
-                "sql_generation_result": SimpleNamespace(
-                    sql_code="SELECT 1",
-                    response="ok",
-                    thought="generated before downstream failure",
-                )
-            }
-        },
-    )
-    raise KeyError("valid_sql")
+class _FailAfterGenerationApp:
+    """Graph double that fails after one node has produced SQL.
+
+    ``stream_agent_response`` asks for ``stream_mode=["updates", "custom"]``,
+    which makes LangGraph yield ``(mode, chunk)`` tuples rather than bare
+    node updates — a node's start announcement on ``custom``, then its state
+    update on ``updates``. Mirrored here so the double matches the real call.
+    """
+
+    def stream(
+        self,
+        state: dict[str, Any],
+        stream_mode: list[str] | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> Iterator[tuple[str, Any]]:
+        yield ("custom", {"type": "step_start", "node": "validate_sql_query"})
+        yield (
+            "updates",
+            {
+                "validate_sql_query": {
+                    "path_state": {
+                        "sql_generation_result": SimpleNamespace(
+                            sql_code="SELECT 1",
+                            response="ok",
+                            thought="generated before downstream failure",
+                        )
+                    }
+                }
+            },
+        )
+        raise KeyError("valid_sql")
 
 
 def test_stream_error_preserves_partial_generated_sql(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(main, "_build_state", lambda payload: {"path_state": {}})
-    monkeypatch.setattr(main, "run_steps", _fail_after_generation)
+    monkeypatch.setattr(main, "app", _FailAfterGenerationApp())
 
     events = list(main.stream_agent_response({"question": "q"}))
 
     assert events[-1] == {
         "type": "error",
-        "message": "Agent failed after react_sql_agent: 'valid_sql'",
-        "node": "react_sql_agent",
+        "message": "Agent failed after validate_sql_query: 'valid_sql'",
+        "node": "validate_sql_query",
         "error_type": "KeyError",
         "partial_answer": {
             "sql_code": "SELECT 1",
@@ -66,37 +80,44 @@ def test_nonstreaming_error_exposes_partial_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(main, "_build_state", lambda payload: {"path_state": {}})
-    monkeypatch.setattr(main, "run_steps", _fail_after_generation)
+    monkeypatch.setattr(main, "app", _FailAfterGenerationApp())
 
     with pytest.raises(main.AgentRunError) as caught:
         main.get_agent_response({"question": "q"})
 
-    assert caught.value.node == "react_sql_agent"
+    assert caught.value.node == "validate_sql_query"
     assert caught.value.partial_answer["sql_code"] == "SELECT 1"
 
 
-def _fail_inside_first_node(_state: Any, _steps: Any) -> Iterator[tuple[str, str, Any]]:
-    """Pipeline double whose first node raises before it ever returns."""
-    yield ("start", "react_sql_agent", None)
-    raise TimeoutError("retriever unavailable")
+class _FailInsideFirstNodeApp:
+    """Graph double whose first node raises before it ever returns."""
+
+    def stream(
+        self,
+        state: dict[str, Any],
+        stream_mode: list[str] | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> Iterator[tuple[str, Any]]:
+        yield ("custom", {"type": "step_start", "node": "retrieve_candidates"})
+        raise TimeoutError("retriever unavailable")
 
 
-def test_error_inside_a_step_names_that_step(
+def test_error_inside_a_node_names_that_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A node that raises produces no update, so completions alone can't name
     it — the failure would be attributed to whichever node last succeeded, or
-    to ``start`` when it is the first one. The start step is what makes the
-    report point at the node that was actually running.
+    to ``graph_start`` when it is the first one. The start announcement is
+    what makes the report point at the node that was actually running.
     """
     monkeypatch.setattr(main, "_build_state", lambda payload: {"path_state": {}})
-    monkeypatch.setattr(main, "run_steps", _fail_inside_first_node)
+    monkeypatch.setattr(main, "app", _FailInsideFirstNodeApp())
 
     events = list(main.stream_agent_response({"question": "q"}))
 
-    assert events[-1]["node"] == "react_sql_agent"
+    assert events[-1]["node"] == "retrieve_candidates"
     assert events[-1]["error_type"] == "TimeoutError"
-    assert "after start" not in events[-1]["message"]
+    assert "graph_start" not in events[-1]["message"]
 
 
 def test_error_after_a_node_completes_names_the_running_node(
@@ -105,15 +126,21 @@ def test_error_after_a_node_completes_names_the_running_node(
     """Once the next node has announced itself, it — not the one that just
     finished — is what the failure is attributed to."""
 
-    def fail_in_second_node(_state: Any, _steps: Any) -> Iterator[tuple[str, str, Any]]:
-        yield ("start", "react_sql_agent", None)
-        yield ("end", "react_sql_agent", {"path_state": {}})
-        yield ("start", "format_and_respond", None)
-        raise RuntimeError("connector died")
+    class _FailInSecondNode:
+        def stream(
+            self,
+            state: dict[str, Any],
+            stream_mode: list[str] | None = None,
+            config: dict[str, Any] | None = None,
+        ) -> Iterator[tuple[str, Any]]:
+            yield ("custom", {"type": "step_start", "node": "validate_sql_query"})
+            yield ("updates", {"validate_sql_query": {"path_state": {}}})
+            yield ("custom", {"type": "step_start", "node": "execute_sql_query"})
+            raise RuntimeError("connector died")
 
     monkeypatch.setattr(main, "_build_state", lambda payload: {"path_state": {}})
-    monkeypatch.setattr(main, "run_steps", fail_in_second_node)
+    monkeypatch.setattr(main, "app", _FailInSecondNode())
 
     events = list(main.stream_agent_response({"question": "q"}))
 
-    assert events[-1]["node"] == "format_and_respond"
+    assert events[-1]["node"] == "execute_sql_query"

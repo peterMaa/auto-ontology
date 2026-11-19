@@ -15,15 +15,37 @@ import {
 import { Button } from '@/common/Button';
 import { Size, ButtonTheme } from '@/enums/button';
 import { Icon, IconName } from '@/common/icons';
+import { useI18n } from '@/lib/i18n/I18nProvider';
+
+export type ReasoningModelOption = {
+	/** Profile id the backend accepts as `reasoning_model`. */
+	id: string;
+	/** Human label, e.g. "NVIDIA NIM". */
+	label: string;
+	/** False when the deployment has no endpoint/key for it yet. */
+	available?: boolean;
+};
 
 type ChatInputProps = {
 	/** Resolves false when the question was refused, so the text can be restored. */
 	onSend: (text: string) => Promise<boolean>;
 	onStop: () => void;
 	isLoading: boolean;
+	/** Selectable reasoning profiles. Fewer than two hides the picker. */
+	reasoningModels?: ReasoningModelOption[];
+	selectedReasoningModel?: string;
+	onSelectReasoningModel?: (id: string) => void;
 };
 
-export const ChatInput = ({ onSend, onStop, isLoading }: ChatInputProps) => {
+export const ChatInput = ({
+	onSend,
+	onStop,
+	isLoading,
+	reasoningModels = [],
+	selectedReasoningModel = '',
+	onSelectReasoningModel,
+}: ChatInputProps) => {
+	const { t } = useI18n();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	// Track whether the textarea currently has any non-whitespace text so the
 	// Send button can be disabled/greyed-out when there's nothing to send.
@@ -94,10 +116,32 @@ export const ChatInput = ({ onSend, onStop, isLoading }: ChatInputProps) => {
 			className="border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900"
 		>
 			<div className="mx-auto flex max-w-3xl items-end gap-2">
+				{reasoningModels.length > 1 && (
+					<select
+						value={selectedReasoningModel || reasoningModels[0].id}
+						onChange={(e) => onSelectReasoningModel?.(e.target.value)}
+						disabled={isLoading}
+						aria-label={t('chat.model')}
+						title={t('chat.modelHint')}
+						className="h-[42px] shrink-0 rounded-xl border border-zinc-300 bg-zinc-50 px-2 text-xs font-medium text-heading outline-none transition-colors focus:border-[#76b900] focus:ring-1 focus:ring-[#76b900] disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+					>
+						{reasoningModels.map((model) => (
+							<option
+								key={model.id}
+								value={model.id}
+								disabled={model.available === false}
+							>
+								{model.available === false
+									? t('chat.modelUnavailable', { name: model.label })
+									: model.label}
+							</option>
+						))}
+					</select>
+				)}
 				<textarea
 					ref={textareaRef}
 					rows={1}
-					placeholder="Ask a Question…"
+					placeholder={t('chat.placeholder')}
 					onInput={handleInput}
 					onKeyDown={handleKeyDown}
 					className="flex-1 resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-2.5 text-sm text-heading outline-none transition-colors placeholder:text-secondary focus:border-[#76b900] focus:ring-1 focus:ring-[#76b900] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
@@ -111,7 +155,7 @@ export const ChatInput = ({ onSend, onStop, isLoading }: ChatInputProps) => {
 						iconOnly
 						type="button"
 						onClick={handleStop}
-						aria-label="Stop generation"
+						aria-label={t('chat.stop')}
 					>
 						<Icon name={IconName.Stop} className="h-4 w-4" />
 					</Button>
@@ -123,7 +167,7 @@ export const ChatInput = ({ onSend, onStop, isLoading }: ChatInputProps) => {
 						iconOnly
 						type="submit"
 						disabled={!hasText}
-						aria-label="Send message"
+						aria-label={t('chat.send')}
 					>
 						<Icon name={IconName.Send} className="h-4 w-4" />
 					</Button>

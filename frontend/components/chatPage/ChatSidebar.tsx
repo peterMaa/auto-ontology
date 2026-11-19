@@ -19,6 +19,7 @@ import { SkeletonRows } from '@/common/Skeleton';
 import { ConfirmModal } from '@/common/modal';
 import { PopoverMenu, type PopoverMenuItem } from '@/common/PopoverMenu';
 import { Text } from '@/common/Text';
+import { BrandLogo } from '@/common/BrandLogo';
 
 type ChatSidebarProps = {
 	conversations: Conversation[];
@@ -208,9 +209,9 @@ export const ChatSidebar = ({
 			>
 				<div className="flex h-[65px] w-full shrink-0 items-center border-b border-zinc-200 px-4 dark:border-zinc-800">
 					<Link href="/" className="flex items-center gap-3">
-						<Icon name={IconName.NvidiaLogo} className="h-6 w-auto text-[#76b900]" />
+						<BrandLogo className="h-6 w-auto text-[#76b900]" />
 						<span className="text-sm font-semibold tracking-wide text-black dark:text-zinc-100">
-							Auto Ontology
+							ArgOnto
 						</span>
 					</Link>
 				</div>

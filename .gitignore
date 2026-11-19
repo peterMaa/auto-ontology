@@ -94,3 +94,14 @@ helm.sh
 /temp.txt
 /vectors_wiki.py
 /vectors_wiki_load.py
+
+# deployment secrets (never commit)
+.env
+*.local
+
+# local caches / tooling
+.uv-cache/
+.uvhome/
+.pytest_cache/
+.ruff_cache/
+*.log

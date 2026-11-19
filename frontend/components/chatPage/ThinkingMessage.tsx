@@ -7,6 +7,8 @@
 import type { GraphStep } from '@/types/chat';
 import { Icon, IconName } from '@/common/icons';
 import { SqlBlock } from '@/common/SqlBlock';
+import { useI18n } from '@/lib/i18n/I18nProvider';
+import { BrandLogo } from '@/common/BrandLogo';
 
 type ThinkingMessageProps = {
 	steps: GraphStep[];
@@ -29,6 +31,15 @@ const Dot = ({ delay }: { delay: string }) => (
 );
 
 export const ThinkingMessage = ({ steps, liveSql }: ThinkingMessageProps) => {
+	const { t } = useI18n();
+	// Step labels arrive from the backend in English. Prefer a translated label
+	// keyed by node, and fall back to whatever the backend sent for nodes this
+	// build has no translation for — so a new step still renders, in English.
+	const labelFor = (step: GraphStep): string => {
+		const key = `steps.${step.node}`;
+		const translated = t(key);
+		return translated === key ? step.label : translated;
+	};
 	const activeStep = [...steps].reverse().find((s) => s.status === 'active');
 	const completedSteps = steps.filter((s) => s.status === 'completed');
 
@@ -44,10 +55,10 @@ export const ThinkingMessage = ({ steps, liveSql }: ThinkingMessageProps) => {
 			<div className="w-full max-w-[80%] rounded-2xl bg-zinc-100 px-4 py-3 dark:bg-zinc-800">
 				<div className="mb-2 flex items-center gap-2">
 					<div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#76b900]/15">
-						<Icon name={IconName.NvidiaLogo} className="h-4 w-4 text-[#76b900]" />
+						<BrandLogo className="h-4 w-4 text-[#76b900]" />
 					</div>
 					<span className="text-xs font-semibold text-body dark:text-zinc-200">
-						Auto Ontology Agent
+						{t('chat.agentName')}
 					</span>
 				</div>
 
@@ -63,7 +74,7 @@ export const ThinkingMessage = ({ steps, liveSql }: ThinkingMessageProps) => {
 									className="mt-0.5 h-3 w-3 shrink-0 text-[#76b900]"
 								/>
 								<span>
-									<span>{step.label}</span>
+									<span>{labelFor(step)}</span>
 									{step.thought && (
 										<span className="block text-secondary dark:text-zinc-500">
 											{step.thought}
@@ -78,7 +89,7 @@ export const ThinkingMessage = ({ steps, liveSql }: ThinkingMessageProps) => {
 				<div className="flex w-full flex-col items-start gap-2">
 					{activeStep && (
 						<span className="text-sm text-heading dark:text-zinc-100">
-							<span>{activeStep.label}</span>
+							<span>{labelFor(activeStep)}</span>
 							{activeStep.thought && (
 								<span className="block text-xs font-normal text-secondary dark:text-zinc-400">
 									{activeStep.thought}

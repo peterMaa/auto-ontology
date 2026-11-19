@@ -879,17 +879,9 @@ def _build_context_within_budget(
 
 
 def run_prediction(
-    question: str,
-    llm: Any,
-    context: PredictionContext,
-    *,
-    organization: str = "",
+    question: str, llm: Any, context: PredictionContext
 ) -> dict[str, Any]:
-    """Generate + repair the PQL, predict, and format — given a prepared context.
-
-    *organization* is the deployment's instructions and glossary, as the
-    text-to-SQL prompt renders them.
-    """
+    """Generate + repair the PQL, predict, and format — given a prepared context."""
     from auto_ontology.retrieval.kumo.pql_gen import generate_pql
 
     started = time.perf_counter()
@@ -899,9 +891,7 @@ def run_prediction(
         graph=context.identity,
     )
     try:
-        return _run_prediction(
-            question, llm, context, generate_pql, record, organization=organization
-        )
+        return _run_prediction(question, llm, context, generate_pql, record)
     except Exception as error:
         record.error = redact_error(f"{type(error).__name__}: {error}")
         raise
@@ -916,8 +906,6 @@ def _run_prediction(
     context: PredictionContext,
     generate_pql: Any,
     record: RunRecord,
-    *,
-    organization: str = "",
 ) -> dict[str, Any]:
     result = generate_pql(
         question,
@@ -934,7 +922,6 @@ def _run_prediction(
         max_preview_rows=_MAX_PREVIEW_ROWS,
         examples=context.examples,
         column_reference=context.column_reference,
-        organization=organization,
     )
 
     record.pql = redact_literals(getattr(result, "pql", "") or "")

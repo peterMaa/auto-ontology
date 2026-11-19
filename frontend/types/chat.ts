@@ -23,6 +23,12 @@ export type ChatRequest = {
 	conversationId?: string | null;
 	/** Scope retrieval/SQL to one connected database when multiple are loaded. */
 	target_db?: string | null;
+	/**
+	 * Reasoning-model profile for this question (e.g. 'nim', 'deepseek').
+	 * Omitted means the deployment default. Embedding and reranking always stay
+	 * on their configured endpoints.
+	 */
+	reasoning_model?: string | null;
 };
 
 /**

@@ -26,7 +26,7 @@ def _isolate_fallback_state(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent client identities and cached fallback clients leaking across tests."""
     monkeypatch.setattr(llm_invoke, "_NON_REASONING_IDS", set())
     monkeypatch.setattr(llm_invoke, "_NON_REASONING_STRONG_REFS", {})
-    monkeypatch.setattr(llm_invoke, "_REASONING_FALLBACK_CLIENT", None)
+    monkeypatch.setattr(llm_invoke, "_REASONING_FALLBACK_CLIENTS", {})
 
 
 class _Model:
@@ -78,7 +78,7 @@ def test_a_client_exposing_model_instead_of_model_name_still_matches() -> None:
 
 
 def _interleaved() -> list[BaseMessage]:
-    """An interleaved shape: system, user, system, system, user."""
+    """The shape sql_from_semantic sends: system, user, system, system, user."""
     return [
         SystemMessage(content="role"),
         HumanMessage(content="question"),

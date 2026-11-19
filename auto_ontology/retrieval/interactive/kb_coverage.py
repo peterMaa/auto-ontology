@@ -13,7 +13,6 @@ clarification-turn orchestration lives in clarify.py.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import time
@@ -331,10 +330,7 @@ def _compact_schema(db_schema: str) -> str:
     columns: list[str] = []
     in_ddl = False  # True only between CREATE TABLE ( ... );
     for line in db_schema.splitlines():
-        # Some schema dumps quote keywords as well as names: "CREATE" TABLE "x" (
-        m = re.match(
-            r'["\']?CREATE["\']?\s+TABLE\s+["\']?(\w+)["\']?\s*\(', line, re.IGNORECASE
-        )
+        m = re.match(r'CREATE\s+TABLE\s+["\']?(\w+)["\']?\s*\(', line, re.IGNORECASE)
         if m:
             if current_table and columns:
                 result.append(f"{current_table}: {', '.join(columns)}")
@@ -347,36 +343,16 @@ def _compact_schema(db_schema: str) -> str:
             if stripped.startswith(");"):
                 in_ddl = False
                 continue
-            unquoted = stripped.replace('"', "").upper()
-            if not stripped or unquoted.startswith(
+            if not stripped or stripped.startswith(
                 ("PRIMARY KEY", "FOREIGN KEY", "CONSTRAINT", ")")
             ):
                 continue
-            col_name = stripped.split()[0].strip('"')
+            col_name = stripped.split()[0]
             if col_name:
                 columns.append(col_name)
     if current_table and columns:
         result.append(f"{current_table}: {', '.join(columns)}")
     return "\n".join(result) or db_schema[:3000]
-
-
-def _compact_column_meanings(column_meanings: str) -> str:
-    """The same 'table: col1, col2, ...' lines as :func:`_compact_schema`, read
-    from the keys of a column-meanings JSON object ("db|table|column" -> meaning)."""
-    try:
-        meanings = json.loads(column_meanings)
-    except (TypeError, ValueError):
-        return ""
-    if not isinstance(meanings, dict):
-        return ""
-    tables: dict[str, list[str]] = {}
-    for key in meanings:
-        parts = str(key).split("|")
-        if len(parts) != 3:
-            continue
-        _, table, column = parts
-        tables.setdefault(table, []).append(column)
-    return "\n".join(f"{table}: {', '.join(cols)}" for table, cols in tables.items())
 
 
 def expand_kb_with_children(

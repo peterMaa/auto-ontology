@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { TooltipProvider } from '@nvidia/foundations-react-core';
 import {
@@ -18,6 +18,13 @@ import { AppTopBar } from '@/common/AppTopBar';
 import { BreadcrumbProvider } from '@/contexts/BreadcrumbContext';
 import { QueryProvider } from '@/contexts/QueryProvider';
 import { getCurrentSession } from '@/auth/auth-guards';
+import { I18nProvider } from '@/lib/i18n/I18nProvider';
+import { UiTextTranslator } from '@/common/UiTextTranslator';
+import {
+	LOCALE_COOKIE,
+	localeFromAcceptLanguage,
+	normalizeLocale,
+} from '@/lib/i18n/messages';
 import { Role } from '@/enums/auth';
 import { connectionQueries } from '@/lib/queries/connections';
 import { tagQueries } from '@/lib/queries/tags';
@@ -44,12 +51,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
 	title: {
-		default: 'Auto Ontology — NVIDIA',
-		template: 'Auto Ontology - %s',
+		default: 'ArgOnto',
+		template: 'ArgOnto - %s',
 	},
-	description: 'NVIDIA Auto Ontology',
+	description: 'ArgOnto — semantic layer for AI agents',
 	icons: {
-		icon: '/favicon.svg',
+		icon: '/argonto-logo.webp',
 	},
 };
 
@@ -95,18 +102,27 @@ export default async function RootLayout({
 	const isAdmin = session?.user.role === Role.Admin;
 	// Injected at runtime by the Helm chart from the chart version (.Chart.Version).
 	const appVersion = process.env.APP_VERSION;
-	const pathname = (await headers()).get('x-auto-ontology-pathname') ?? '';
+	const headerList = await headers();
+	const pathname = headerList.get('x-auto-ontology-pathname') ?? '';
 	const showAppChrome = Boolean(session) && !isLoginOrOauthPath(pathname);
 	// Only read where `showAppChrome` holds, which is where there is a session.
 	const userId = session?.user.id ?? '';
+	// Language: an explicit choice (cookie) wins over the browser's Accept-Language,
+	// so switching stays put across reloads and other devices see their own default.
+	const cookieStore = await cookies();
+	const locale =
+		normalizeLocale(cookieStore.get(LOCALE_COOKIE)?.value) ??
+		localeFromAcceptLanguage(headerList.get('accept-language'));
 
 	return (
 		<html
-			lang="en"
+			lang={locale === 'zh' ? 'zh-CN' : 'en'}
 			className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
 		>
 			<body className="flex h-full flex-col bg-white text-heading dark:bg-zinc-950 dark:text-zinc-100">
-				<QueryProvider>
+				<I18nProvider initialLocale={locale}>
+					<UiTextTranslator />
+					<QueryProvider>
 					<TooltipProvider openDelayDuration={400} skipDelayDuration={0}>
 						{showAppChrome ? (
 							// Only the signed-in app reads the shared lists; the login
@@ -125,7 +141,8 @@ export default async function RootLayout({
 							children
 						)}
 					</TooltipProvider>
-				</QueryProvider>
+					</QueryProvider>
+				</I18nProvider>
 			</body>
 		</html>
 	);

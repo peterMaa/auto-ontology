@@ -751,8 +751,9 @@ def extract_tables_and_columns(
     )
     union_pairs = _extract_union_pairs(qualified, alias_map, source_table_names)
 
+    # Drop real-table entries that ended up with no columns attributed.
     return ExtractionResult(
-        tables=result,
+        tables={k: v for k, v in result.items() if v.columns},
         ast_node_count=ast_node_count,
         joins=join_pairs,
         unions=union_pairs,

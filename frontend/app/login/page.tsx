@@ -11,24 +11,29 @@ import { Size, ButtonTheme } from '@/enums/button';
 import { Icon, IconName } from '@/common/icons';
 import { SkeletonBlock } from '@/common/Skeleton';
 import { authApi, type SsoProvider } from '@/api/auth';
+import { useI18n } from '@/lib/i18n/I18nProvider';
 import { useSession } from '@/auth/auth-client';
 import { resumeAuthorizeFromApp } from '@/auth/oauth-loopback';
 import { SkeletonVariant } from '@/enums/skeleton';
+import { BrandLogo } from '@/common/BrandLogo';
 
 const inputClass =
 	'w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-body outline-none transition-colors placeholder:text-secondary focus:border-[#76b900] focus:ring-2 focus:ring-[#76b900]/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300';
 
-const LoginLoading = () => (
+const LoginLoading = () => {
+	const { t } = useI18n();
+	return (
 	<div
 		className="w-full max-w-sm space-y-4 py-6"
 		role="status"
-		aria-label="Loading sign-in options"
+		aria-label={t('login.loadingOptions')}
 	>
 		<SkeletonBlock variant={SkeletonVariant.RECTANGLE} className="h-10 w-full" />
 		<SkeletonBlock variant={SkeletonVariant.RECTANGLE} className="h-10 w-full" />
 		<SkeletonBlock className="mx-auto h-3 w-1/3" />
 	</div>
-);
+	);
+};
 
 // An MCP client sends a user here to sign in, by way of an authorize request
 // that arrived without a session (see the `mcp` plugin's `loginPage` in
@@ -69,6 +74,7 @@ const LoginForm = () => {
 	// toggles the email/password fallback ("backdoor") so the local bootstrap
 	// admin can still sign in if the SSO provider is unreachable.
 	const [showPasswordLogin, setShowPasswordLogin] = useState(false);
+	const { t } = useI18n();
 
 	// Authoritative session check (validates the cookie server-side and clears
 	// it if invalid). Used to send an already-authenticated user to their
@@ -136,7 +142,7 @@ const LoginForm = () => {
 						type="button"
 						onClick={() => handleSso(provider.provider_id)}
 					>
-						Sign In with SSO
+						{t('login.signInWithSso')}
 					</Button>
 				))}
 				<Button
@@ -148,7 +154,7 @@ const LoginForm = () => {
 						setShowPasswordLogin(true);
 					}}
 				>
-					Sign In with Password
+					{t('login.signInWithPassword')}
 				</Button>
 			</div>
 		);
@@ -159,7 +165,7 @@ const LoginForm = () => {
 		<form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
 			<div className="flex flex-col gap-1.5">
 				<label htmlFor="email" className="text-xs font-medium text-body dark:text-zinc-400">
-					Email
+					{t('login.email')}
 				</label>
 				<input
 					id="email"
@@ -176,7 +182,7 @@ const LoginForm = () => {
 					htmlFor="password"
 					className="text-xs font-medium text-body dark:text-zinc-400"
 				>
-					Password
+					{t('login.password')}
 				</label>
 				<input
 					id="password"
@@ -197,7 +203,7 @@ const LoginForm = () => {
 				type="submit"
 				disabled={submitting}
 			>
-				{submitting ? 'Signing in…' : 'Sign in'}
+				{submitting ? t('login.signingIn') : t('login.signIn')}
 			</Button>
 
 			{ssoEnabled ? (
@@ -210,7 +216,7 @@ const LoginForm = () => {
 						setShowPasswordLogin(false);
 					}}
 				>
-					Back to SSO
+					{t('login.backToSso')}
 				</Button>
 			) : null}
 		</form>
@@ -221,9 +227,9 @@ const LoginPage = () => (
 	<div className="flex h-full w-full items-center justify-center bg-white p-6 dark:bg-zinc-950">
 		<div className="flex flex-col items-center gap-6">
 			<div className="flex items-center gap-2">
-				<Icon name={IconName.NvidiaLogo} className="h-6 w-6" />
+				<BrandLogo className="h-6 w-6" />
 				<span className="text-lg font-semibold text-heading dark:text-zinc-100">
-					Auto Ontology
+					ArgOnto
 				</span>
 			</div>
 			<Suspense fallback={<LoginLoading />}>

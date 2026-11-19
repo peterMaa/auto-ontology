@@ -141,7 +141,14 @@ def _worker_loop(
             subject_token,
             conversation_history,
             evidence,
+            *rest,
         ) = payload
+        reasoning_model = rest[0] if rest else None
+        # Per-question reasoning profile, set before any client is built for
+        # this ask. Omitted keeps the deployment default.
+        from auto_ontology.utils.model_profiles import set_active_profile
+
+        set_active_profile(reasoning_model)
         try:
             # Connections are resolved once at worker init. If that
             # lookup came back empty — the store not yet reachable when this
@@ -246,6 +253,7 @@ class PrewarmedWorker:
         subject_token: str | None = None,
         conversation_history: list[dict[str, str | None]] | None = None,
         evidence: str | None = None,
+        reasoning_model: str | None = None,
     ) -> None:
         """Ask *question*, optionally forcing the prediction/SQL branch.
 
@@ -257,6 +265,9 @@ class PrewarmedWorker:
         ones, so SQL executes under that user's own Databricks grants.
         *evidence* is optional authoritative evidence kept separate from
         the question.
+        *reasoning_model* selects the reasoning profile for this question only.
+        The subprocess applies it before running the pipeline, because a
+        context variable does not cross the process boundary.
         """
         self._in_q.put(
             (
@@ -268,6 +279,7 @@ class PrewarmedWorker:
                     subject_token,
                     conversation_history or [],
                     evidence,
+                    reasoning_model,
                 ),
             )
         )

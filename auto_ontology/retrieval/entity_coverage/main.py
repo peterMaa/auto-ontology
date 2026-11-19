@@ -2,7 +2,7 @@
 # All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Entry point for the entity-coverage pipeline."""
+"""Entry point for the entity-coverage LangGraph pipeline."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 
 from auto_ontology.retrieval.data_access.custom_analyses import fetch_custom_analyses
-from auto_ontology.retrieval.entity_coverage.pipeline import create_steps, run
+from auto_ontology.retrieval.entity_coverage.graph import create_graph
 from auto_ontology.retrieval.entity_coverage.state import (
     DEFAULT_MAX_DISTANCE,
     EntityCoveragePayload,
@@ -28,7 +28,8 @@ except (ValueError, EnvironmentError, OSError) as exc:
     logger.error("Failed to initialize LLM client: %s", exc)
     llm_client = None
 
-steps = create_steps()
+graph = create_graph()
+app = graph.compile()
 
 
 def _build_state(payload: EntityCoveragePayload) -> AgentState:
@@ -83,12 +84,12 @@ def _build_state(payload: EntityCoveragePayload) -> AgentState:
 
 
 def get_coverage_response(payload: EntityCoveragePayload) -> dict:
-    """Run the entity-coverage pipeline and return coverage and ranked candidates."""
+    """Run the entity-coverage graph and return coverage and ranked candidates."""
     if llm_client is None:
         raise RuntimeError("LLM client is not configured.")
 
     state = _build_state(payload)
-    final_state = run(state, steps)
+    final_state = app.invoke(state, config={"recursion_limit": 10})
 
     path_state = final_state.get("path_state", {})
     final_response = path_state.get("final_response")
@@ -102,6 +103,7 @@ def get_coverage_response(payload: EntityCoveragePayload) -> dict:
 
 __all__ = [
     "get_coverage_response",
-    "steps",
+    "app",
+    "graph",
     "llm_client",
 ]

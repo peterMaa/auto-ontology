@@ -16,6 +16,7 @@ import {
 } from '@/auth/oauth-loopback';
 import { OauthStatus } from '@/app/oauth/OauthStatus';
 import { ButtonTheme, Size } from '@/enums/button';
+import { BrandLogo } from '@/common/BrandLogo';
 
 const ConsentForm = () => {
 	const params = useSearchParams();
@@ -75,7 +76,7 @@ const ConsentForm = () => {
 					Authorize MCP access
 				</h1>
 				<p className="text-sm text-body dark:text-zinc-400">
-					{clientId} is requesting access to Auto Ontology as your account.
+					{clientId} is requesting access to ArgOnto as your account.
 				</p>
 			</div>
 
@@ -122,9 +123,9 @@ const ConsentPage = () => (
 	<div className="flex h-full w-full items-center justify-center bg-white p-6 dark:bg-zinc-950">
 		<div className="flex flex-col items-center gap-6">
 			<div className="flex items-center gap-2">
-				<Icon name={IconName.NvidiaLogo} className="h-6 w-6" />
+				<BrandLogo className="h-6 w-6" />
 				<span className="text-lg font-semibold text-heading dark:text-zinc-100">
-					Auto Ontology
+					ArgOnto
 				</span>
 			</div>
 			<Suspense fallback={null}>

@@ -66,6 +66,10 @@ export function proxy(request: NextRequest) {
 
 export const config = {
 	// Run on all pages (for the auth gate), excluding Next internals and static
-	// assets.
-	matcher: ['/((?!_next/static|_next/image|favicon.svg|.*\\.svg$).*)'],
+	// assets. Every image extension is listed, not just svg: the product mark is
+	// a .webp, and an unauthenticated request for it would otherwise be
+	// redirected to /login and render as a broken image on the sign-in screen.
+	matcher: [
+		'/((?!_next/static|_next/image|favicon\\.(?:svg|ico)|.*\\.(?:svg|png|webp|jpg|jpeg|gif|ico)$).*)',
+	],
 };
